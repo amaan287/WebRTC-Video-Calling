@@ -14,7 +14,7 @@ const ioPort = 8001
 app.use(bodyParser.json());
 
 const emailToSocketMapping = new Map()
-
+const sockeytToEmailMapping = new Map()
 // Socket.io
 io.on('connection', (socket) => {
     console.log("New connection")
@@ -22,9 +22,18 @@ io.on('connection', (socket) => {
         const { roomId, emailId } = data
         console.log("User: ", emailId, "joined room: ", roomId)
         emailToSocketMapping.set(emailId, socket.id)
+        sockeytToEmailMapping.set(socket.id, emailId)
         socket.join(roomId)
         socket.emit('joined-room', { roomId, emailId })
         socket.broadcast.to(roomId).emit('user-joined', { roomId, emailId })
+    })
+
+    socket.on('call-user', data => {
+        const { emailId, offer } = data
+        const socketId = emailToSocketMapping.get(emailId)
+        const fromEmail = sockeytToEmailMapping.get(socket.id)
+        socket.to(socketId).emit('incoming-call', { from: { emailId: fromEmail }, offer })
+
     })
 
 })
