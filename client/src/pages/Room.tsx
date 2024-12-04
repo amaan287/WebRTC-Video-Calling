@@ -3,7 +3,6 @@ import { useEffect, useCallback, useState } from "react";
 import { usePeer } from "@/providers/Peer";
 import ReactPlayer from "react-player";
 import { Button } from "@/components/ui/button";
-
 interface JoinRoomPayload {
   roomId: string;
   emailId: string;
@@ -27,16 +26,16 @@ interface callAcceptedPayload {
   answer: RTCSessionDescriptionInit;
 }
 export default function Room() {
-  const [myStream, setMyStream] = useState<MediaStream | null>(null);
-
   const { socket } = useSocket();
+  const [remoteEmailId, setRemoteEmailId] = useState<string | null>(null);
+  const [myStream, setMyStream] = useState<MediaStream | null>(null);
   const {
     peer,
     createOffer,
     createAnswer,
     setRemoteAns,
-    sendStream,
     otherUserStream,
+    sendStream,
   } = usePeer() as unknown as PeerContextType;
   const handleNewUserJoined = useCallback(
     async (data: JoinRoomPayload) => {
@@ -45,6 +44,7 @@ export default function Room() {
       console.log(`User ${emailId} has joined room ${roomId}`);
       const offer = await createOffer();
       socket.emit("call-user", { emailId, offer });
+      setRemoteEmailId(emailId);
     },
     [createOffer, socket]
   );
@@ -54,6 +54,7 @@ export default function Room() {
       console.log("Incoming call from", from.emailId, offer);
       const ans = await createAnswer(offer);
       socket.emit("call-accepted", { emailId: from.emailId, answer: ans });
+      setRemoteEmailId(from.emailId);
     },
     [createAnswer, socket]
   );
@@ -66,15 +67,19 @@ export default function Room() {
     [setRemoteAns]
   );
   const getUserMediaStream = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-    setMyStream(stream);
-    stream.getTracks().forEach((track) => {
-      peer.addTrack(track, stream);
-    });
-  }, [peer]);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      setMyStream(stream);
+    } catch (error) {
+      console.error("Error accessing media devices:", error);
+      alert(
+        "Unable to access camera or microphone. Please check your permissions."
+      );
+    }
+  }, [sendStream]);
   useEffect(() => {
     socket.on("user-joined", handleNewUserJoined);
     socket.on("incoming-call", handleIncomingCall);
@@ -86,24 +91,45 @@ export default function Room() {
       socket.off("call-accepted", handleCallAccepted);
     };
   }, [handleNewUserJoined, socket, handleIncomingCall, handleCallAccepted]);
-
+  const handleNegotiation = useCallback(async () => {
+    console.log("Negotiation needed");
+    const localOffer = peer.localDescription;
+    if (localOffer) {
+      socket.emit("call-user", { emailId: remoteEmailId, offer: localOffer });
+    }
+  }, [peer.localDescription, remoteEmailId, socket]);
+  useEffect(() => {
+    peer.addEventListener("negotiationneeded", handleNegotiation);
+    return () => {
+      peer.removeEventListener("negotiationneeded", handleNegotiation);
+    };
+  });
   useEffect(() => {
     getUserMediaStream();
-  });
+  }, [getUserMediaStream]);
   return (
     <div>
+      <Button onClick={() => myStream && sendStream(myStream)}>Join</Button>
       <h1>Roompage</h1>
-      <Button
-        onClick={() => {
-          if (myStream) {
-            sendStream(myStream);
-          }
-        }}
-      >
-        Join the call
-      </Button>
-      {myStream && <ReactPlayer url={myStream} playing />}
-      {otherUserStream && <ReactPlayer url={otherUserStream} playing />}
+      <h2>you are connected to {remoteEmailId}</h2>
+      {myStream && (
+        <ReactPlayer
+          url={myStream}
+          playing
+          controls
+          width="100%"
+          height="100%"
+        />
+      )}
+      {otherUserStream && (
+        <ReactPlayer
+          url={otherUserStream}
+          playing
+          controls
+          width="100%"
+          height="100%"
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import {
   createContext,
-  useEffect,
   ReactNode,
+  useEffect,
   useContext,
   useMemo,
   useState,
@@ -69,16 +69,18 @@ export const PeerProvider = ({ children }: PeerProviderProps) => {
   const sendStream = async (stream: MediaStream) => {
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
   };
-  const handleTrackEvent = useCallback((ev: RTCTrackEvent) => {
-    const stream = ev.streams;
-    setOtherUserStream(stream[0]);
+  const handleNewUserJoined = useCallback(async (event: RTCTrackEvent) => {
+    const streams = event.streams;
+    console.log("Got stream", streams);
+    setOtherUserStream(streams[0]);
   }, []);
+
   useEffect(() => {
-    peer.addEventListener("track", handleTrackEvent);
+    peer.addEventListener("track", handleNewUserJoined);
     return () => {
-      peer.removeEventListener("track", handleTrackEvent);
+      peer.removeEventListener("track", handleNewUserJoined);
     };
-  }, [handleTrackEvent, peer]);
+  }, [peer, handleNewUserJoined]);
   return (
     <PeerContext.Provider
       value={{
