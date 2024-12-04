@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from "react";
+import { useState, FormEvent, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,15 +16,21 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [roomCode, setRoomCode] = useState("");
 
-  const handleRoomJoined = ({ roomId, emailId }: JoinRoomPayload) => {
-    // Redirect to room page
-    navigate(`/room/${roomId}`);
-    console.log(`Joined room ${roomId} as ${emailId}`);
-  };
+  const handleRoomJoined = useCallback(
+    ({ roomId, emailId }: JoinRoomPayload) => {
+      // Redirect to room page
+      navigate(`/room/${roomId}`);
+      console.log(`Joined room ${roomId} as ${emailId}`);
+    },
+    [navigate]
+  );
 
   useEffect(() => {
     socket.on("joined-room", handleRoomJoined);
-  }, [socket]);
+    return () => {
+      socket.off("joined-room", handleRoomJoined);
+    };
+  }, [socket, handleRoomJoined]);
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

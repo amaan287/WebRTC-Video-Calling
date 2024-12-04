@@ -1,4 +1,12 @@
-import { createContext, ReactNode, useContext, useMemo } from "react";
+import {
+  createContext,
+  useEffect,
+  ReactNode,
+  useContext,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
 
 interface PeerProviderProps {
   children: ReactNode;
@@ -7,6 +15,12 @@ interface PeerProviderProps {
 interface PeerContextType {
   peer: RTCPeerConnection;
   createOffer: () => Promise<RTCSessionDescriptionInit>;
+  createAnswer: (
+    offer: RTCSessionDescriptionInit
+  ) => Promise<RTCSessionDescriptionInit>;
+  setRemoteAns: (answer: RTCSessionDescriptionInit) => Promise<void>;
+  sendStream: (stream: MediaStream) => Promise<void>;
+  otherUserStream: MediaStream | null;
 }
 
 const PeerContext = createContext<PeerContextType | null>(null);
@@ -20,6 +34,9 @@ export const usePeer = () => {
 };
 
 export const PeerProvider = ({ children }: PeerProviderProps) => {
+  const [otherUserStream, setOtherUserStream] = useState<MediaStream | null>(
+    null
+  );
   const peer = useMemo(
     () =>
       new RTCPeerConnection({
@@ -40,9 +57,39 @@ export const PeerProvider = ({ children }: PeerProviderProps) => {
     await peer.setLocalDescription(offer);
     return offer;
   }
-
+  const createAnswer = async (offer: RTCSessionDescriptionInit) => {
+    await peer.setRemoteDescription(offer);
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    return answer;
+  };
+  const setRemoteAns = async (answer: RTCSessionDescriptionInit) => {
+    await peer.setRemoteDescription(answer);
+  };
+  const sendStream = async (stream: MediaStream) => {
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+  };
+  const handleTrackEvent = useCallback((ev: RTCTrackEvent) => {
+    const stream = ev.streams;
+    setOtherUserStream(stream[0]);
+  }, []);
+  useEffect(() => {
+    peer.addEventListener("track", handleTrackEvent);
+    return () => {
+      peer.removeEventListener("track", handleTrackEvent);
+    };
+  }, [handleTrackEvent, peer]);
   return (
-    <PeerContext.Provider value={{ peer, createOffer }}>
+    <PeerContext.Provider
+      value={{
+        peer,
+        createOffer,
+        createAnswer,
+        setRemoteAns,
+        sendStream,
+        otherUserStream,
+      }}
+    >
       {children}
     </PeerContext.Provider>
   );

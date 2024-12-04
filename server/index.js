@@ -35,6 +35,12 @@ io.on('connection', (socket) => {
         socket.to(socketId).emit('incoming-call', { from: { emailId: fromEmail }, offer })
 
     })
+    socket.on('call-accepted', data => {
+        const { emailId, answer } = data
+        const socketId = emailToSocketMapping.get(emailId)
+        socket.to(socketId).emit('call-accepted', { answer })
+
+    })
 
 })
 
