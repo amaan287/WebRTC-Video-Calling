@@ -3,10 +3,13 @@ import { useEffect, useCallback, useState } from "react";
 import { usePeer } from "@/providers/Peer";
 import ReactPlayer from "react-player";
 import { Button } from "@/components/ui/button";
+import { Camera, Mic, MicOff, VideoOff } from "lucide-react";
+
 interface JoinRoomPayload {
   roomId: string;
   emailId: string;
 }
+
 interface PeerContextType {
   peer: RTCPeerConnection;
   createOffer: () => Promise<RTCSessionDescriptionInit>;
@@ -17,18 +20,24 @@ interface PeerContextType {
   sendStream: (stream: MediaStream) => Promise<void>;
   otherUserStream: MediaStream | null;
 }
+
 interface incomingCallPayload {
   from: { emailId: string };
   offer: RTCSessionDescriptionInit;
 }
+
 interface callAcceptedPayload {
   emailId: string;
   answer: RTCSessionDescriptionInit;
 }
+
 export default function Room() {
   const { socket } = useSocket();
   const [remoteEmailId, setRemoteEmailId] = useState<string | null>(null);
   const [myStream, setMyStream] = useState<MediaStream | null>(null);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+
   const {
     peer,
     createOffer,
@@ -37,6 +46,7 @@ export default function Room() {
     otherUserStream,
     sendStream,
   } = usePeer() as unknown as PeerContextType;
+
   const handleNewUserJoined = useCallback(
     async (data: JoinRoomPayload) => {
       console.log(data);
@@ -48,6 +58,7 @@ export default function Room() {
     },
     [createOffer, socket]
   );
+
   const handleIncomingCall = useCallback(
     async (data: incomingCallPayload) => {
       const { from, offer } = data;
@@ -66,6 +77,7 @@ export default function Room() {
     },
     [setRemoteAns]
   );
+
   const getUserMediaStream = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -80,6 +92,7 @@ export default function Room() {
       );
     }
   }, [sendStream]);
+
   useEffect(() => {
     socket.on("user-joined", handleNewUserJoined);
     socket.on("incoming-call", handleIncomingCall);
@@ -91,6 +104,7 @@ export default function Room() {
       socket.off("call-accepted", handleCallAccepted);
     };
   }, [handleNewUserJoined, socket, handleIncomingCall, handleCallAccepted]);
+
   const handleNegotiation = useCallback(async () => {
     console.log("Negotiation needed");
     const localOffer = peer.localDescription;
@@ -98,38 +112,105 @@ export default function Room() {
       socket.emit("call-user", { emailId: remoteEmailId, offer: localOffer });
     }
   }, [peer.localDescription, remoteEmailId, socket]);
+
   useEffect(() => {
     peer.addEventListener("negotiationneeded", handleNegotiation);
     return () => {
       peer.removeEventListener("negotiationneeded", handleNegotiation);
     };
   });
+
   useEffect(() => {
     getUserMediaStream();
   }, [getUserMediaStream]);
+
+  const toggleMic = () => {
+    if (myStream) {
+      myStream.getAudioTracks().forEach((track) => {
+        track.enabled = isMicMuted;
+      });
+      setIsMicMuted(!isMicMuted);
+    }
+  };
+
+  const toggleCamera = () => {
+    if (myStream) {
+      myStream.getVideoTracks().forEach((track) => {
+        track.enabled = isCameraOff;
+      });
+      setIsCameraOff(!isCameraOff);
+    }
+  };
+
   return (
-    <div>
-      <Button onClick={() => myStream && sendStream(myStream)}>Join</Button>
-      <h1>Roompage</h1>
-      <h2>you are connected to {remoteEmailId}</h2>
-      {myStream && (
-        <ReactPlayer
-          url={myStream}
-          playing
-          controls
-          width="100%"
-          height="100%"
-        />
-      )}
-      {otherUserStream && (
-        <ReactPlayer
-          url={otherUserStream}
-          playing
-          controls
-          width="100%"
-          height="100%"
-        />
-      )}
+    <div className="min-h-screen bg-gray-100 p-6 flex flex-col items-center">
+      <div className="w-full max-w-4xl bg-white shadow-lg rounded-lg overflow-hidden">
+        <div className="p-4 bg-blue-500 text-white">
+          <h1 className="text-2xl font-bold">Video Chat Room</h1>
+          {remoteEmailId && (
+            <p className="text-sm">Connected to: {remoteEmailId}</p>
+          )}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4 p-4">
+          {myStream && (
+            <div className="relative bg-gray-200 rounded-lg overflow-hidden">
+              <ReactPlayer
+                url={myStream}
+                playing
+                controls
+                width="100%"
+                height="400px"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
+                <button
+                  onClick={toggleMic}
+                  className={`p-2 rounded-full ${
+                    isMicMuted
+                      ? "bg-red-500 text-white"
+                      : "bg-white text-gray-800"
+                  } shadow-lg`}
+                >
+                  {isMicMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                </button>
+                <button
+                  onClick={toggleCamera}
+                  className={`p-2 rounded-full ${
+                    isCameraOff
+                      ? "bg-red-500 text-white"
+                      : "bg-white text-gray-800"
+                  } shadow-lg`}
+                >
+                  {isCameraOff ? <VideoOff size={24} /> : <Camera size={24} />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {otherUserStream && (
+            <div className="bg-gray-200 rounded-lg overflow-hidden">
+              <ReactPlayer
+                url={otherUserStream}
+                playing
+                controls
+                width="100%"
+                height="400px"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 bg-gray-50 text-center">
+          <Button
+            onClick={() => myStream && sendStream(myStream)}
+            className="bg-green-500 hover:bg-green-600 text-white"
+          >
+            Join Call
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
