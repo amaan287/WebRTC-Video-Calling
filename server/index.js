@@ -1,7 +1,7 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import { Server } from 'socket.io';
-
+import path from 'path';
 const io = new Server(
     {
         cors: true
@@ -10,6 +10,7 @@ const io = new Server(
 const app = express();
 const expressPort = 8000;
 const ioPort = 8001
+const __dirname = path.resolve();
 
 app.use(bodyParser.json());
 
@@ -38,14 +39,18 @@ io.on('connection', (socket) => {
     socket.on('call-accepted', data => {
         const { emailId, answer } = data
         const socketId = emailToSocketMapping.get(emailId)
-        socket.to(socketId).emit('call-accepted', { answer })
+        console.log("Call accepted by: ", sockeytToEmailMapping.get(socket.id), 'to', emailId)
+        socket.to(socketId).emit('call-accepted', { emailId: sockeytToEmailMapping.get(socket.id), answer })
 
     })
 
 })
 
 //routes    
-
+app.use(express.static(path.join(__dirname, '../client/dist')));
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../client", "dist", "index.html"));
+});
 // Express port running 
 app.listen(expressPort, () => {
     console.log(`Server is running on  http://localhost/${expressPort}`);

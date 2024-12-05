@@ -19,6 +19,7 @@ interface PeerContextType {
   setRemoteAns: (answer: RTCSessionDescriptionInit) => Promise<void>;
   sendStream: (stream: MediaStream) => Promise<void>;
   otherUserStream: MediaStream | null;
+  resetPeerConnection: () => void;
 }
 
 interface incomingCallPayload {
@@ -40,6 +41,7 @@ export default function Room() {
 
   const {
     peer,
+    resetPeerConnection,
     createOffer,
     createAnswer,
     setRemoteAns,
@@ -63,19 +65,37 @@ export default function Room() {
     async (data: incomingCallPayload) => {
       const { from, offer } = data;
       console.log("Incoming call from", from.emailId, offer);
-      const ans = await createAnswer(offer);
-      socket.emit("call-accepted", { emailId: from.emailId, answer: ans });
-      setRemoteEmailId(from.emailId);
+      try {
+        // Log current state before creating answer
+        console.log(
+          "Current signaling state before createAnswer:",
+          peer.signalingState
+        );
+
+        const ans = await createAnswer(offer);
+        socket.emit("call-accepted", { emailId: from.emailId, answer: ans });
+        setRemoteEmailId(from.emailId);
+      } catch (error) {
+        console.error("Error handling incoming call:", error);
+        // Optionally reset the peer connection or notify user
+        resetPeerConnection();
+      }
     },
-    [createAnswer, socket]
+    [peer.signalingState, createAnswer, socket, resetPeerConnection]
   );
 
   const handleCallAccepted = useCallback(
     async (data: callAcceptedPayload) => {
       console.log("Call accepted", data);
-      await setRemoteAns(data.answer);
+      try {
+        console.log("current signaling state: ", peer.signalingState);
+        await setRemoteAns(data.answer);
+      } catch (err) {
+        console.log("error setting remote answer: ", err);
+        resetPeerConnection();
+      }
     },
-    [setRemoteAns]
+    [peer.signalingState, resetPeerConnection, setRemoteAns]
   );
 
   const getUserMediaStream = useCallback(async () => {
@@ -91,7 +111,7 @@ export default function Room() {
         "Unable to access camera or microphone. Please check your permissions."
       );
     }
-  }, [sendStream]);
+  }, []);
 
   useEffect(() => {
     socket.on("user-joined", handleNewUserJoined);

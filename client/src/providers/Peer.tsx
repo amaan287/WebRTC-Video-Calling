@@ -3,7 +3,6 @@ import {
   ReactNode,
   useEffect,
   useContext,
-  useMemo,
   useState,
   useCallback,
 } from "react";
@@ -21,6 +20,7 @@ interface PeerContextType {
   setRemoteAns: (answer: RTCSessionDescriptionInit) => Promise<void>;
   sendStream: (stream: MediaStream) => Promise<void>;
   otherUserStream: MediaStream | null;
+  resetPeerConnection: () => void;
 }
 
 const PeerContext = createContext<PeerContextType | null>(null);
@@ -37,50 +37,135 @@ export const PeerProvider = ({ children }: PeerProviderProps) => {
   const [otherUserStream, setOtherUserStream] = useState<MediaStream | null>(
     null
   );
-  const peer = useMemo(
-    () =>
-      new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: [
-              "stun:stun.l.google.com:19302",
-              "stun:stun1.l.google.com:19302",
-            ],
-          },
-        ],
-      }),
-    []
-  );
 
-  async function createOffer() {
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    return offer;
-  }
-  const createAnswer = async (offer: RTCSessionDescriptionInit) => {
-    await peer.setRemoteDescription(offer);
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    return answer;
+  // Create a function to create a new peer connection
+  const createPeerConnection = () => {
+    return new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+          ],
+        },
+      ],
+    });
   };
-  const setRemoteAns = async (answer: RTCSessionDescriptionInit) => {
-    await peer.setRemoteDescription(answer);
-  };
-  const sendStream = async (stream: MediaStream) => {
-    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-  };
+
+  const [peer, setPeer] = useState<RTCPeerConnection>(() =>
+    createPeerConnection()
+  );
   const handleNewUserJoined = useCallback(async (event: RTCTrackEvent) => {
     const streams = event.streams;
     console.log("Got stream", streams);
     setOtherUserStream(streams[0]);
   }, []);
+  const resetPeerConnection = useCallback(() => {
+    // Close the existing peer connection
+    if (peer) {
+      peer.close();
+    }
+    // Create a new peer connection
+    const newPeer = createPeerConnection();
+    // Re-add event listeners
+    newPeer.addEventListener("track", handleNewUserJoined);
+    newPeer.addEventListener("connectionstatechange", () => {
+      console.log("Peer connection state:", newPeer.connectionState);
+      if (newPeer.connectionState === "failed") {
+        resetPeerConnection();
+      }
+    });
+
+    setPeer(newPeer);
+    return newPeer;
+  }, [handleNewUserJoined, peer]);
+
+  async function createOffer() {
+    try {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      return offer;
+    } catch (error) {
+      console.error("Error creating offer:", error);
+      throw error;
+    }
+  }
+
+  const createAnswer = async (offer: RTCSessionDescriptionInit) => {
+    try {
+      // Ensure the peer is in a state to set a remote description
+      if (
+        peer.signalingState !== "stable" &&
+        peer.signalingState !== "have-remote-offer"
+      ) {
+        console.warn(
+          "Cannot create answer. Current state:",
+          peer.signalingState
+        );
+        resetPeerConnection();
+      }
+      await peer.setRemoteDescription(offer);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+
+      return answer;
+    } catch (error) {
+      console.error("Error in createAnswer:", error);
+      resetPeerConnection();
+      throw error;
+    }
+  };
+
+  const setRemoteAns = async (answer: RTCSessionDescriptionInit) => {
+    try {
+      console.log(
+        "Current signaling state before setRemote description:",
+        peer.signalingState
+      );
+      // Check the current connection state before setting remote description
+      if (peer.signalingState === "have-local-offer") {
+        console.warn(
+          "unexpected signaling state for setting remote answer:",
+          peer.signalingState
+        );
+        resetPeerConnection();
+      }
+      await peer.setRemoteDescription(answer);
+    } catch (error) {
+      console.error("Error setting remote answer:", error);
+      resetPeerConnection();
+      throw error;
+    }
+  };
+
+  const sendStream = async (stream: MediaStream) => {
+    try {
+      // Remove existing tracks before adding new ones
+      peer.getSenders().forEach((sender) => peer.removeTrack(sender));
+
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    } catch (error) {
+      console.error("Error sending stream:", error);
+      throw error;
+    }
+  };
 
   useEffect(() => {
     peer.addEventListener("track", handleNewUserJoined);
+
+    // Add error handling
+    peer.addEventListener("connectionstatechange", () => {
+      console.log("Peer connection state:", peer.connectionState);
+      if (peer.connectionState === "failed") {
+        resetPeerConnection();
+      }
+    });
+
     return () => {
       peer.removeEventListener("track", handleNewUserJoined);
     };
-  }, [peer, handleNewUserJoined]);
+  }, [peer, handleNewUserJoined, resetPeerConnection]);
+
   return (
     <PeerContext.Provider
       value={{
@@ -90,6 +175,7 @@ export const PeerProvider = ({ children }: PeerProviderProps) => {
         setRemoteAns,
         sendStream,
         otherUserStream,
+        resetPeerConnection,
       }}
     >
       {children}
