@@ -20,7 +20,7 @@ export const useSocket = () => {
 // Export the custom hook
 
 export default function SocketProvider({ children }: SocketProviderProps) {
-  const socket = useMemo(() => io("http://localhost:8001"), []);
+  const socket = useMemo(() => io("http://localhost:8000"), []);
 
   return (
     <SocketContext.Provider value={{ socket }}>
