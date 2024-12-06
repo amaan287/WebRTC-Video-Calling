@@ -13,7 +13,7 @@ const io = new Server(httpServer, {
     }
 });
 
-const PORT = process.env.PORT || 8000;
+const PORT = 8000;
 const __dirname = path.resolve();
 
 // Middleware
